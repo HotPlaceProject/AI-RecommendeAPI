@@ -3,10 +3,6 @@ import os
 from langchain_community.tools import TavilySearchResults
 from langchain_core.tools import tool
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 
 @tool
 def search_web(query: str) -> str:
@@ -14,8 +10,6 @@ def search_web(query: str) -> str:
     Searches the internet for information that does not exist
     in the database or for the latest information.
     """
-    os.environ[
-        "TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
 
     tavily_search = TavilySearchResults(max_results=5,
                                         include_domains=[

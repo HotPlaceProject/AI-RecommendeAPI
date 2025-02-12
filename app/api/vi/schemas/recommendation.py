@@ -13,3 +13,26 @@ class Restaurant(BaseModel):
 class Recommendation(BaseModel):
     msg: str
     restaurants: List[Restaurant]
+
+
+class User(BaseModel):
+    age: int = Field(description="나이")
+    gender : str = Field(description="성별")
+
+
+class RecommendationRequest(BaseModel):
+    user: User
+    region: str = Field(description="지역")
+    category: str = Field(description="선호유형")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "user": {
+                    "age": 20,
+                    "gender": "남성"
+                },
+                "region": "대치동",
+                "category": "국밥"
+            }
+        }
