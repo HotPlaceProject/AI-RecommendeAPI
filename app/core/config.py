@@ -29,9 +29,7 @@ class Settings(BaseSettings):
     """
     BASE_DIR: ClassVar[Path] = Path(__file__).resolve().parent.parent
     model_config = SettingsConfigDict(
-        env_file=str(BASE_DIR / ".env"),
-        env_ignore_empty=True,
-        extra="ignore",  # 정의되지 않은 env는 무시
+        env_file=str(BASE_DIR / ".env")
     )
 
     # === 일반 설정 ===
@@ -56,12 +54,13 @@ class Settings(BaseSettings):
         base.append(self.FRONTEND_HOST.rstrip("/"))
         return base
 
-    # === LangChain / API 키 설정 ===
-    # (env 파일에 OPENAI_API_KEY, TAVILY_API_KEY가 들어있다고 가정)
-    OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
-    TAVILY_API_KEY: str = Field(default="", env="TAVILY_API_KEY")
+    # === API 키 설정 ===
+    OPENAI_API_KEY: str = Field(default="asd", env="OPENAI_API_KEY")
+    TAVILY_API_KEY: str = Field(default="qwe", env="TAVILY_API_KEY")
 
     # 필요한 추가 환경 변수가 있다면 여기에 선언하면 됨
 
 # 실제 인스턴스
 settings = Settings()
+
+print("config Loaded:", settings.OPENAI_API_KEY)

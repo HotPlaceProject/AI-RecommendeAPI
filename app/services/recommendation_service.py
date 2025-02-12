@@ -1,69 +1,92 @@
 # app/services/recommendation_service.py
+import json
 from typing import Optional
 import os
 
+from langchain.chains.llm import LLMChain
+from langchain_core.messages import BaseMessage
 # LangChain, OpenAI 관련 임포트
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.runnables import RunnableConfig, chain
+from langchain_core.runnables import RunnableConfig, chain, RunnableSerializable
 from langchain_openai import ChatOpenAI
+from typing import Any, List
 
 # Pydantic 모델
-from app.api.vi.schemas.recommendation import Recommendation
+from app.api.vi.schemas.recommendation import Recommendation, User, RecommendationRequest
+
+# config.py에서 환경 변수를 로드
 from app.core.config import settings
+os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
+os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 
 # 검색 툴
 from app.langchain_tools.search_web import search_web
 
-os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
 
-# 예시: 사용자 특성
-# todo: 실제 사용자 입력을 받아서 feature 변수에 할당
-feature = "남성/60대/한식선호"
-
-# 1) ChatPromptTemplate 구성
-# todo: 사용자 입력을 받아서 user_input 변수에 할당
-# todo: 프롬프트 수정 - 참고한 소스 제공
-prompt_template = ChatPromptTemplate([
-    ("system", f"""
-      당신은 사용자의 나이, 성별, 선호하는 스타일을 기반으로 맞춤형 식당을 추천하는 어시스턴트입니다.
-
-      아래 사용자의 특성을 반영해서 맞춤형 맛집을 추천해주세요
-      {feature}
-
-    """),
-    ("user", "#Format: {format_instructions}\n\n#user_input: {user_input}"),
-    ("placeholder", "{messages}")
-])
-
-# 2) JsonOutputParser
-output_parser = JsonOutputParser(pydantic_object=Recommendation)
-prompt = prompt_template.partial(format_instructions=output_parser.get_format_instructions())
-
-# 3) OpenAI 모델 초기화
-llm = ChatOpenAI(model="gpt-4o-mini")
-
-# 4) LLM + Tool 바인딩
-llm_with_tools = llm.bind_tools(tools=[search_web])
-
-# 5) 최종 체인
-llm_chain = prompt | llm_with_tools
-
-@chain
-def web_search_chain(user_input: str, config: RunnableConfig):
+def create_prompt_template(feature: str) -> ChatPromptTemplate:
     """
-    LangChain 체인을 통한 검색 + LLM 호출 함수.
+    ChatPromptTemplate을 생성하는 함수
     """
-    input_ = {"user_input": user_input}
-    ai_msg = llm_chain.invoke(input_, config=config)
-    tool_msgs = search_web.batch(ai_msg.tool_calls, config=config)
+    prompt_template = ChatPromptTemplate([
+        ("system", f"""
+          당신은 사용자의 나이, 성별, 희망 카테고리을 기반으로 맞춤형 식당을 추천하는 어시스턴트입니다.
 
-    return llm_chain.invoke({**input_, "messages": [ai_msg, *tool_msgs]}, config=config)
+          아래 사용자의 특성을 반영해서 맞춤형 맛집을 추천해주세요
+          {feature}
 
-def recommend_restaurant(user_query: str) -> str:
+        """),
+        ("user", "#Format: {format_instructions}\n\n#user_input: {user_input}"),
+        ("placeholder", "{messages}")
+    ])
+    output_parser = JsonOutputParser(pydantic_object=Recommendation) # output parser JsonOutputParser로 설정
+    prompt = prompt_template.partial(format_instructions=output_parser.get_format_instructions())
+
+    return prompt
+
+
+def initialize_llm() -> ChatOpenAI:
     """
-    외부에서 호출되는 추천 로직.
+    LLM을 호출하는 함수
     """
-    response = web_search_chain.invoke(user_query)
-    json_str = response.content.replace("```json\n", "").replace("\n```", "")
-    return json_str
+    return ChatOpenAI(model="gpt-4o-mini")
+
+
+def execute_web_search_chain(prompt: ChatPromptTemplate) -> Any:
+    """
+    LLM과 웹 검색 툴을 연결한 체인을 생성하여 반환
+    """
+    llm = initialize_llm()
+    llm_with_tools = llm.bind_tools(tools=[search_web])
+    llm_chain = prompt | llm_with_tools
+
+    return llm_chain  # 🔹 체인만 반환 (invoke 실행 X)
+
+
+def recommend_restaurant(req: RecommendationRequest) -> dict:
+    """
+    추천 요청을 받아서 맛집을 추천하는 함수
+    """
+    feature = f"나이: {req.user.age}, 성별: {req.user.gender}, 카테고리: {req.category}"
+    prompt = create_prompt_template(feature)
+
+    # 체인 생성
+    llm_with_chain = execute_web_search_chain(prompt)
+
+    # invoke 실행 (1차 호출 -> Tool 호출)
+    ai_msg = llm_with_chain.invoke({"user_input": req.region}, config=RunnableConfig())
+    print("Tool Calling:", ai_msg)
+
+    # search_web 호출하여 추가 데이터 가져오기
+    tool_msgs = search_web.batch(ai_msg.tool_calls, config=RunnableConfig())
+
+    # LLM에게 검색 결과를 다시 전달하여 최종 응답 생성 (2차 호출)
+    final_response = llm_with_chain.invoke({"user_input": req.region, "messages": [ai_msg, *tool_msgs]}, config=RunnableConfig())
+    print("Final AI Response:", final_response)
+
+    # JSON 파싱
+    json_str = final_response.content.replace("```json\n", "").replace("\n```", "")
+    return json.loads(json_str, strict=False)
+
+
+

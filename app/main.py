@@ -1,14 +1,7 @@
 # app/main.py
-import os
 from fastapi import FastAPI
-
-# config.py에서 환경 변수를 로드 (미리 import하는 순간 .env도 로드)
-from app.core.config import settings
 from app.api.vi.routers.recommend import router as recommend_router
 
-# 실제로 .env의 내용을 os.environ에 세팅
-os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
-os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 
 # FastAPI 인스턴스 생성
 app = FastAPI(
