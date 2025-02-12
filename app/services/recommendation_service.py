@@ -1,4 +1,5 @@
 # app/services/recommendation_service.py
+import json
 from typing import Optional
 import os
 
@@ -7,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import RunnableConfig, chain
 from langchain_openai import ChatOpenAI
+from typing import Any, List
 
 # Pydantic 모델
 from app.api.vi.schemas.recommendation import Recommendation
@@ -15,11 +17,24 @@ from app.core.config import settings
 # 검색 툴
 from app.langchain_tools.search_web import search_web
 
-os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
+
+os.environ[
+    "OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
+
+def call_llm(user: Any, region: str, preference: str) -> Any:
+    """
+    LLM을 호출하는 함수
+    """
+
 
 # 예시: 사용자 특성
 # todo: 실제 사용자 입력을 받아서 feature 변수에 할당
-feature = "남성/60대/한식선호"
+feature = "남성/30대/회식"
 
 # 1) ChatPromptTemplate 구성
 # todo: 사용자 입력을 받아서 user_input 변수에 할당
@@ -49,6 +64,7 @@ llm_with_tools = llm.bind_tools(tools=[search_web])
 # 5) 최종 체인
 llm_chain = prompt | llm_with_tools
 
+
 @chain
 def web_search_chain(user_input: str, config: RunnableConfig):
     """
@@ -60,10 +76,11 @@ def web_search_chain(user_input: str, config: RunnableConfig):
 
     return llm_chain.invoke({**input_, "messages": [ai_msg, *tool_msgs]}, config=config)
 
-def recommend_restaurant(user_query: str) -> str:
+
+def recommend_restaurant(user_query: str) -> dict:
     """
     외부에서 호출되는 추천 로직.
     """
     response = web_search_chain.invoke(user_query)
     json_str = response.content.replace("```json\n", "").replace("\n```", "")
-    return json_str
+    return json.loads(json_str, strict=False)
